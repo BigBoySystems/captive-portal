@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
 
 from aiohttp import web
-from asyncio import sleep, subprocess
+from asyncio import sleep, subprocess, gather
 import argparse
 import os
 import sys
 
 
-async def start_ap(request):
+async def start_ap():
     await run_check("ifconfig {if} down")
-    await run_daemon("hostapd", "hostapd /etc/hostapd/hostapd.conf")
     await run_check("ifconfig {if} up 192.168.1.1")
+    await run_daemon("hostapd", "hostapd /etc/hostapd/hostapd.conf")
     await run_daemon(
         "dnsmasq", "dnsmasq -i {if} -d -R -F 192.168.1.2,192.168.1.32 -A /#/192.168.1.1"
     )
-    return web.Response(text="")
+    await run_daemon("nginx", "nginx -g 'daemon off; error_log stderr;'")
 
 
 # daemon management
@@ -43,9 +43,11 @@ async def stop_daemon(name):
     await proc.wait()
 
 
-async def kill_daemons(app):
-    for name in list(app["daemons"].keys()):
-        await stop_daemon(name)
+async def kill_daemons():
+    await gather(
+        *[stop_daemon(name) for name in list(app["daemons"].keys())],
+        return_exceptions=True,
+    )
 
 
 # process management
@@ -69,9 +71,16 @@ async def run_check(cmd, **format_args):
 ###################################################################################################
 
 app = web.Application()
-app.on_cleanup.append(kill_daemons)
+app.on_startup.append(lambda _app: start_ap())
+app.on_cleanup.append(lambda _app: kill_daemons())
 app["daemons"] = {}
 app.add_routes([web.get("/start-ap", start_ap)])
+
+
+async def route_start_ap(request):
+    await start_ap()
+    return web.Response(text="OK")
+
 
 parser = argparse.ArgumentParser(description="A captive portal service for the thingy")
 parser.add_argument(
