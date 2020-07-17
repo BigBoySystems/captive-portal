@@ -4,10 +4,12 @@ url = "https://pypi.org/simple"
 verify_ssl = true
 
 [scripts]
-dev = "adev runserver captive-portal.py"
+dev = "env INTERFACE=wlan0 adev runserver captive-portal.py"
+fmt = "yapf -i --recursive ."
 
 [dev-packages]
 aiohttp-devtools = "*"
+yapf = "*"
 
 [packages]
 aiohttp = "*"
