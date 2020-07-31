@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from aiohttp import web
-from asyncio import sleep, subprocess, gather, create_task, Lock
+from asyncio import sleep, subprocess, gather, create_task, Lock, shield
 import argparse
 import ast
 import logging
@@ -114,12 +114,12 @@ async def run_capture_check(cmd, **format_args):
 
 
 async def route_start_ap(request):
-    await start_ap()
+    await shield(start_ap())
     return web.Response(text="OK")
 
 
 async def route_list_networks(request):
-    networks = await list_networks()
+    networks = await shield(list_networks())
     json = [{
         "essid": x,
     } for x in networks]
