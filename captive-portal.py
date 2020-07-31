@@ -16,7 +16,6 @@ async def start_ap():
     async with app["lock"]:
         logger.info("Starting access point...")
         await kill_daemons()
-        await run_check("ifconfig {if} down")
         await run_check("ifconfig {if} up 192.168.1.1")
         await run_daemon("hostapd", "hostapd /etc/hostapd/hostapd.conf")
         await run_daemon(
@@ -30,8 +29,6 @@ async def list_networks():
     async with app["lock"]:
         logger.info("Getting networks...")
         await kill_daemons()
-        await run_check("ifconfig {if} down")
-        await run_check("iwconfig {if} mode Managed")
         await run_check("ifconfig {if} up")
         output = await run_capture_check("iwlist {if} scan")
         networks = [ast.literal_eval(x) for x in IWLIST_NETWORKS.findall(output)]
