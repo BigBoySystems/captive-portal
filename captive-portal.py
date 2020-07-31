@@ -24,20 +24,22 @@ async def start_ap():
         )
         await run_daemon("nginx", "nginx -g 'daemon off; error_log stderr;'")
         logger.info("Access point started successfully.")
-        app["ap"] = True
+        app["portal"].set(True)
 
 
 async def list_networks():
     try:
         async with app["lock"]:
             logger.info("Getting networks...")
-            await kill_daemons()
+            if app["portal"]:
+                await kill_daemons()
             await run_check("ifconfig {if} up")
             output = await run_capture_check("iwlist {if} scan")
             networks = [ast.literal_eval(x) for x in IWLIST_NETWORKS.findall(output)]
             logger.info("Networks received successfully.")
     finally:
-        create_task(start_ap())
+        if app["portal"]:
+            create_task(start_ap())
     return networks
 
 
@@ -56,7 +58,7 @@ async def connect(essid, password):
                 "wpa_supplicant", "wpa_supplicant -i {if} -D nl80211,wext -c /run/{if}.conf"
             )
             await run_daemon("dhclient", "dhclient {if} -d")
-            app["ap"] = False
+            app["portal"].set(False)
     except Exception:
         await start_ap()
         raise
@@ -158,7 +160,7 @@ async def route_list_networks(_request):
 
 
 async def route_ap(_request):
-    return web.json_response(app["ap"])
+    return web.json_response(app["portal"].get())
 
 
 async def start_ap_on_startup(app):
@@ -175,6 +177,24 @@ async def shutdown_interface(app):
     await run_check("ifconfig {if} down")
 
 
+class Container:
+    """
+    Help against the deprecation warning when storing a value in `app` and re-assigning during
+    execution
+    """
+    def __init__(self, value):
+        self.value = value
+
+    def __bool__(self):
+        return bool(self.value)
+
+    def set(self, value):
+        self.value = value
+
+    def get(self):
+        return self.value
+
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("captive-portal")
 app = web.Application()
@@ -183,11 +203,11 @@ app.on_cleanup.append(kill_daemons_on_cleanup)
 app.on_cleanup.append(shutdown_interface)
 app["daemons"] = OrderedDict()
 app["lock"] = Lock()
-app["ap"] = True
+app["portal"] = Container(True)
 app.add_routes([web.get("/start-ap", route_start_ap)])
 app.add_routes([web.get("/list-networks", route_list_networks)])
 app.add_routes([web.get("/connect", route_connect)])
-app.add_routes([web.get("/ap", route_ap)])
+app.add_routes([web.get("/portal", route_ap)])
 
 parser = argparse.ArgumentParser(description="A captive portal service for the thingy")
 parser.add_argument(
