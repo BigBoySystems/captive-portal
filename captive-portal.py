@@ -24,34 +24,42 @@ async def start_ap():
         )
         await run_daemon("nginx", "nginx -g 'daemon off; error_log stderr;'")
         logger.info("Access point started successfully.")
+        app["ap"] = True
 
 
 async def list_networks():
-    async with app["lock"]:
-        logger.info("Getting networks...")
-        await kill_daemons()
-        await run_check("ifconfig {if} up")
-        output = await run_capture_check("iwlist {if} scan")
-        networks = [ast.literal_eval(x) for x in IWLIST_NETWORKS.findall(output)]
-        logger.info("Networks received successfully.")
-    create_task(start_ap())
+    try:
+        async with app["lock"]:
+            logger.info("Getting networks...")
+            await kill_daemons()
+            await run_check("ifconfig {if} up")
+            output = await run_capture_check("iwlist {if} scan")
+            networks = [ast.literal_eval(x) for x in IWLIST_NETWORKS.findall(output)]
+            logger.info("Networks received successfully.")
+    finally:
+        create_task(start_ap())
     return networks
 
 
 async def connect(essid, password):
-    async with app["lock"]:
-        await kill_daemons()
-        await run_check("ifconfig {if} down")
-        await run_check("ifconfig {if} up")
-        output = await run_capture_check(
-            "wpa_passphrase {essid} {password}", essid=essid, password=password
-        )
-        with open("/run/%s.conf" % app["interface"], "wt") as fh:
-            fh.write(output)
-        await run_daemon(
-            "wpa_supplicant", "wpa_supplicant -i {if} -D nl80211,wext -c /run/{if}.conf"
-        )
-        await run_daemon("dhclient", "dhclient {if} -d")
+    try:
+        async with app["lock"]:
+            await kill_daemons()
+            await run_check("ifconfig {if} down")
+            await run_check("ifconfig {if} up")
+            output = await run_capture_check(
+                "wpa_passphrase {essid} {password}", essid=essid, password=password
+            )
+            with open("/run/%s.conf" % app["interface"], "wt") as fh:
+                fh.write(output)
+            await run_daemon(
+                "wpa_supplicant", "wpa_supplicant -i {if} -D nl80211,wext -c /run/{if}.conf"
+            )
+            await run_daemon("dhclient", "dhclient {if} -d")
+            app["ap"] = False
+    except Exception:
+        await start_ap()
+        raise
 
 
 # daemon management
@@ -128,7 +136,7 @@ async def run_capture_check(cmd, **format_args):
 ###################################################################################################
 
 
-async def route_start_ap(request):
+async def route_start_ap(_request):
     await shield(start_ap())
     return web.Response(text="OK")
 
@@ -141,12 +149,16 @@ async def route_connect(request):
         return web.Response(text="Missing query key essid or password!", status=400)
 
 
-async def route_list_networks(request):
+async def route_list_networks(_request):
     networks = await shield(list_networks())
     json = [{
         "essid": x,
     } for x in networks]
     return web.json_response(json)
+
+
+async def route_ap(_request):
+    return web.json_response(app["ap"])
 
 
 async def start_ap_on_startup(app):
@@ -171,9 +183,11 @@ app.on_cleanup.append(kill_daemons_on_cleanup)
 app.on_cleanup.append(shutdown_interface)
 app["daemons"] = OrderedDict()
 app["lock"] = Lock()
+app["ap"] = True
 app.add_routes([web.get("/start-ap", route_start_ap)])
 app.add_routes([web.get("/list-networks", route_list_networks)])
 app.add_routes([web.get("/connect", route_connect)])
+app.add_routes([web.get("/ap", route_ap)])
 
 parser = argparse.ArgumentParser(description="A captive portal service for the thingy")
 parser.add_argument(
