@@ -2,6 +2,7 @@
 
 from aiohttp import web
 from asyncio import sleep, subprocess, gather, create_task, Lock, shield
+from collections import OrderedDict
 import argparse
 import ast
 import logging
@@ -37,6 +38,22 @@ async def list_networks():
     return networks
 
 
+async def connect(essid, password):
+    async with app["lock"]:
+        await kill_daemons()
+        await run_check("ifconfig {if} down")
+        await run_check("ifconfig {if} up")
+        output = await run_capture_check(
+            "wpa_passphrase {essid} {password}", essid=essid, password=password
+        )
+        with open("/run/%s.conf" % app["interface"], "wt") as fh:
+            fh.write(output)
+        await run_daemon(
+            "wpa_supplicant", "wpa_supplicant -i {if} -D nl80211,wext -c /run/{if}.conf"
+        )
+        await run_daemon("dhclient", "dhclient {if} -d")
+
+
 # daemon management
 
 
@@ -55,22 +72,23 @@ async def stop_daemon(name):
     proc = app["daemons"].pop(name)
     if proc.returncode is not None:
         return
-    print("Terminating process %s..." % name)
+    logger.info("Terminating process %s..." % name)
     proc.terminate()
     await sleep(2)
     if proc.returncode is None:
-        print("Killing process %s..." % name)
+        logger.info("Killing process %s..." % name)
         proc.kill()
-    print("Waiting process %s..." % name)
+    logger.info("Waiting process %s..." % name)
     await proc.wait()
 
 
 async def kill_daemons():
-    daemons = list(app["daemons"].keys())
+    daemons = list(reversed(app["daemons"].keys()))
     if daemons:
         logger.debug("Killing daemons...")
     else:
         logger.debug("No daemon to kill.")
+        return
     await gather(
         *[stop_daemon(name) for name in daemons],
         return_exceptions=True,
@@ -104,7 +122,7 @@ async def run_capture_check(cmd, **format_args):
     if rc != 0:
         raise Exception("command execution failed (exit status != 0): %s" % cmd)
     stdout = await proc.stdout.read()
-    return str(stdout)
+    return stdout.decode("utf8")
 
 
 ###################################################################################################
@@ -113,6 +131,14 @@ async def run_capture_check(cmd, **format_args):
 async def route_start_ap(request):
     await shield(start_ap())
     return web.Response(text="OK")
+
+
+async def route_connect(request):
+    try:
+        await shield(connect(request.query["essid"], request.query["password"]))
+        return web.Response(text="OK")
+    except KeyError as exc:
+        return web.Response(text="Missing query key essid or password!", status=400)
 
 
 async def route_list_networks(request):
@@ -132,15 +158,22 @@ async def kill_daemons_on_cleanup(app):
         await kill_daemons()
 
 
+async def shutdown_interface(app):
+    logger.debug("Shutting down interface...")
+    await run_check("ifconfig {if} down")
+
+
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("captive-portal")
 app = web.Application()
 app.on_startup.append(start_ap_on_startup)
 app.on_cleanup.append(kill_daemons_on_cleanup)
-app["daemons"] = {}
+app.on_cleanup.append(shutdown_interface)
+app["daemons"] = OrderedDict()
 app["lock"] = Lock()
 app.add_routes([web.get("/start-ap", route_start_ap)])
 app.add_routes([web.get("/list-networks", route_list_networks)])
+app.add_routes([web.get("/connect", route_connect)])
 
 parser = argparse.ArgumentParser(description="A captive portal service for the thingy")
 parser.add_argument(
@@ -159,6 +192,11 @@ parser.add_argument(
     help="open the server on a TCP/IP port",
 )
 parser.add_argument(
+    "--debug",
+    action="store_true",
+    help="show debug logs",
+)
+parser.add_argument(
     "interface",
     type=str,
     help="WiFi interface",
@@ -171,6 +209,9 @@ if __name__ == "__main__":
     if args.unix is None and (args.host is None or args.port is None):
         print("You must at least provide the UNIX socket or the TCP/IP host " "and port.")
         sys.exit(1)
+
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
 
     app["interface"] = args.interface
 
