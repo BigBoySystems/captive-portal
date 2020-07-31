@@ -70,17 +70,27 @@ async def run_check(cmd, **format_args):
 
 ###################################################################################################
 
-app = web.Application()
-app.on_startup.append(lambda _app: start_ap())
-app.on_cleanup.append(lambda _app: kill_daemons())
-app["daemons"] = {}
-app.add_routes([web.get("/start-ap", start_ap)])
-
 
 async def route_start_ap(request):
     await start_ap()
     return web.Response(text="OK")
 
+
+def dont_fail(future):
+    async def dont_fail_func(_app):
+        try:
+            await future
+        except Exception as exc:
+            print(exc, file=sys.stderr)
+
+    return dont_fail_func
+
+
+app = web.Application()
+app.on_startup.append(dont_fail(start_ap()))
+app.on_cleanup.append(dont_fail(kill_daemons()))
+app["daemons"] = {}
+app.add_routes([web.get("/start-ap", route_start_ap)])
 
 parser = argparse.ArgumentParser(description="A captive portal service for the thingy")
 parser.add_argument(
