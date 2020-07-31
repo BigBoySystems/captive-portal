@@ -121,5 +121,10 @@ if __name__ == "__main__":
         path=args.unix,
     )
 else:
+    if "INTERFACE" not in os.environ:
+        print("Missing `INTERFACE` in environment variables.", file=sys.stderr)
+        print("Example: INTERFACE=wlan0 pipenv run dev", file=sys.stderr)
+        sys.exit(1)
+
     # development mode
     app["interface"] = os.environ["INTERFACE"]

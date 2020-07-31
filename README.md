@@ -15,7 +15,7 @@ Quick Start
 Install all the dependencies:
 
 ```
-pipenv install --dev
+INTERFACE=wlan0 pipenv install --dev
 ```
 
 Run the dev server:
