@@ -6,7 +6,7 @@ BindsTo=sys-subsystem-net-devices-%i.device
 After=sys-subsystem-net-devices-%i.device
 
 [Service]
-ExecStart=captive-portal --unix /run/captive-portal-%I.sock %I
+ExecStart=/usr/local/sbin/captive-portal --unix /run/captive-portal-%I.sock %I
 KillMode=process
 Restart=always
 
