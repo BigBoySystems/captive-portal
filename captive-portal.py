@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 from aiohttp import web
-from asyncio import sleep, subprocess, gather, create_task, Lock, shield
+from asyncio import sleep, subprocess, gather, Lock, shield
 from collections import OrderedDict
 import argparse
 import ast
@@ -9,6 +9,11 @@ import logging
 import os
 import re
 import sys
+
+if sys.version_info.major == 3 and sys.version_info.minor < 7:
+    from asyncio import ensure_future as create_task
+else:
+    from asyncio import create_task
 
 IWLIST_NETWORKS = re.compile(r"ESSID:(\"\w+\")")
 
