@@ -15,13 +15,14 @@ if sys.version_info.major == 3 and sys.version_info.minor < 7:
 else:
     from asyncio import create_task
 
-IWLIST_NETWORKS = re.compile(r"ESSID:(\"\w+\")")
+IWLIST_NETWORKS = re.compile(r"(Encryption key:on)?.+ESSID:(\"\w+\")")
 
 
 async def start_ap():
     async with app["lock"]:
         logger.info("Starting access point...")
         await kill_daemons()
+        await run_check("ifconfig {if} down")
         await run_check("ifconfig {if} up 192.168.1.1")
         await run_daemon("hostapd", "hostapd /etc/hostapd/hostapd.conf")
         await run_daemon(
@@ -40,7 +41,9 @@ async def list_networks():
                 await kill_daemons()
             await run_check("ifconfig {if} up")
             output = await run_capture_check("iwlist {if} scan")
-            networks = [ast.literal_eval(x) for x in IWLIST_NETWORKS.findall(output)]
+            networks = [
+                (ast.literal_eval(x[1]), x[0] is not None) for x in IWLIST_NETWORKS.findall(output)
+            ]
             logger.info("Networks received successfully.")
     finally:
         if app["portal"]:
@@ -158,9 +161,12 @@ async def route_connect(request):
 
 async def route_list_networks(_request):
     networks = await shield(list_networks())
-    json = [{
-        "essid": x,
-    } for x in networks]
+    json = [
+        {
+        "essid": essid,
+        "password": password,
+        } for (essid, password) in dict(networks).items()
+    ]
     return web.json_response(json)
 
 
