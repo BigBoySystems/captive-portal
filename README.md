@@ -15,13 +15,13 @@ Quick Start
 Install all the dependencies:
 
 ```
-INTERFACE=wlan0 pipenv install --dev
+pipenv install --dev
 ```
 
 Run the dev server:
 
 ```
-pipenv run dev
+INTERFACE=wlan0 pipenv run dev
 ```
 
 **WARNING:** the development server does not gracefully exit the app. This
