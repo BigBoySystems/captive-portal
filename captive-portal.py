@@ -5,6 +5,7 @@ from asyncio import sleep, subprocess, gather, Lock, shield
 from collections import OrderedDict
 import argparse
 import ast
+import json
 import logging
 import os
 import re
@@ -51,11 +52,31 @@ async def list_networks():
     return networks
 
 
+async def get_ip_addresses():
+    output = await run_capture_check("ip -br -j addr")
+    data = json.loads(output)
+    interfaces = {x["ifname"]: x for x in data}
+    our_interface = interfaces[app["interface"]]
+    return our_interface["addr_info"]
+
+
+async def clear_ip():
+    addr_info = await get_ip_addresses()
+    for info in addr_info:
+        await run_check("ip addr del {local}/{prefixlen} dev {if}", **info)
+
+
+async def check_ip_status():
+    addr_info = await get_ip_addresses()
+    return len(addr_info) > 0
+
+
 async def connect(essid, password):
     try:
         async with app["lock"]:
             await kill_daemons()
             await run_check("ifconfig {if} down")
+            await clear_ip()
             await run_check("ifconfig {if} up")
             output = await run_capture_check(
                 "wpa_passphrase {essid} {password}", essid=essid, password=password
@@ -66,6 +87,17 @@ async def connect(essid, password):
                 "wpa_supplicant", "wpa_supplicant -i {if} -D nl80211,wext -c /run/{if}.conf"
             )
             await run_daemon("dhclient", "dhclient {if} -d")
+            logger.info("Checking if connection is ready...")
+            for _ in range(5):
+                if await check_ip_status():
+                    logger.info("Connection succeeded.")
+                    break
+                await sleep(2)
+            else:
+                logger.info(
+                    "The connection to the WiFi did not succeed in the allowed amount of time"
+                )
+                raise Exception("Could not connect to network.")
             app["portal"].set(False)
     except Exception:
         await start_ap()
@@ -161,13 +193,13 @@ async def route_connect(request):
 
 async def route_list_networks(_request):
     networks = await shield(list_networks())
-    json = [
+    data = [
         {
         "essid": essid,
         "password": password,
         } for (essid, password) in dict(networks).items()
     ]
-    return web.json_response(json)
+    return web.json_response(data)
 
 
 async def route_ap(_request):
