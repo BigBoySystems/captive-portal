@@ -16,22 +16,28 @@ if sys.version_info.major == 3 and sys.version_info.minor < 7:
 else:
     from asyncio import create_task
 
-IWLIST_NETWORKS = re.compile(r"(Encryption key:on)?.+ESSID:(\"\w+\")")
+IWLIST_NETWORKS = re.compile(r"Encryption key:(on|off)\n\s*ESSID:(\"\w+\")")
 
 
 async def start_ap():
     async with app["lock"]:
-        if app["portal"]:
-            return
         logger.info("Starting access point...")
         await kill_daemons()
-        await run_check("ifconfig {if} down")
-        await run_check("ifconfig {if} up 192.168.1.1")
-        await run_daemon("hostapd", "hostapd /etc/hostapd/hostapd.conf")
+        await run_check("ifconfig", "{if}", "down")
+        await run_check("ifconfig", "{if}", "up", "192.168.1.1")
+        await run_daemon("hostapd", "/etc/hostapd/hostapd.conf")
         await run_daemon(
-            "dnsmasq", "dnsmasq -i {if} -d -R -F 192.168.1.2,192.168.1.32 -A /#/192.168.1.1"
+            "dnsmasq",
+            "-i",
+            "{if}",
+            "-d",
+            "-R",
+            "-F",
+            "192.168.1.2,192.168.1.32",
+            "-A",
+            "/#/192.168.1.1",
         )
-        await run_daemon("nginx", "nginx -g 'daemon off; error_log stderr;'")
+        await run_daemon("nginx", "-g", "daemon off; error_log stderr;")
         logger.info("Access point started successfully.")
         app["portal"].set(True)
 
@@ -42,10 +48,10 @@ async def list_networks():
             logger.info("Getting networks...")
             if app["portal"]:
                 await kill_daemons()
-            await run_check("ifconfig {if} up")
-            output = await run_capture_check("iwlist {if} scan")
+            await run_check("ifconfig", "{if}", "up")
+            output = await run_capture_check("iwlist", "{if}", "scan")
             networks = [
-                (ast.literal_eval(x[1]), x[0] is not None) for x in IWLIST_NETWORKS.findall(output)
+                (ast.literal_eval(x[1]), x[0] == "on") for x in IWLIST_NETWORKS.findall(output)
             ]
             logger.info("Networks received successfully.")
     finally:
@@ -55,7 +61,7 @@ async def list_networks():
 
 
 async def get_ip_addresses():
-    output = await run_capture_check("ip -br -j addr")
+    output = await run_capture_check("ip", "-br", "-j", "addr")
     data = json.loads(output)
     interfaces = {x["ifname"]: x for x in data}
     our_interface = interfaces[app["interface"]]
@@ -65,7 +71,7 @@ async def get_ip_addresses():
 async def clear_ip():
     addr_info = await get_ip_addresses()
     for info in addr_info:
-        await run_check("ip addr del {local}/{prefixlen} dev {if}", **info)
+        await run_check("ip", "addr", "del", "{local}/{prefixlen}", "dev", "{if}", **info)
 
 
 async def check_ip_status():
@@ -77,18 +83,30 @@ async def connect(essid, password):
     try:
         async with app["lock"]:
             await kill_daemons()
-            await run_check("ifconfig {if} down")
+            await run_check("ifconfig", "{if}", "down")
             await clear_ip()
-            await run_check("ifconfig {if} up")
-            output = await run_capture_check(
-                "wpa_passphrase {essid} {password}", essid=essid, password=password
-            )
-            with open("/run/%s.conf" % app["interface"], "wt") as fh:
-                fh.write(output)
-            await run_daemon(
-                "wpa_supplicant", "wpa_supplicant -i {if} -D nl80211,wext -c /run/{if}.conf"
-            )
-            await run_daemon("dhclient", "dhclient {if} -d")
+            await run_check("ifconfig", "{if}", "up")
+            if password is not None:
+                output = await run_capture_check(
+                    "wpa_passphrase",
+                    essid,
+                    password,
+                )
+                with open("/run/%s.conf" % app["interface"], "wt") as fh:
+                    fh.write(output)
+                await run_daemon(
+                    "wpa_supplicant",
+                    "-i",
+                    "{if}",
+                    "-D",
+                    "nl80211,wext",
+                    "-c",
+                    "/run/{if}.conf",
+                )
+            else:
+                await run_check("iwconfig", "{if}", "essid", essid)
+                await run_check("iwconfig", "{if}", "ap", "any")
+            await run_daemon("dhclient", "{if}", "-d")
             logger.info("Checking if connection is ready...")
             for _ in range(4):
                 if await check_ip_status():
@@ -109,7 +127,8 @@ async def connect(essid, password):
 # daemon management
 
 
-async def run_daemon(name, cmd, **format_args):
+async def run_daemon(*cmd, **format_args):
+    name = cmd[0]
     await stop_daemon(name)
     proc = app["daemons"][name] = await run_proc(cmd, format_args, {})
     await sleep(1)
@@ -156,19 +175,19 @@ async def run_proc(cmd, format_args, subprocess_args):
     format_args.update({
         "if": app["interface"],
     })
-    cmd = cmd.format_map(format_args)
+    cmd = [x.format_map(format_args) for x in cmd]
     logger.debug("Running command: %s", cmd)
-    return await subprocess.create_subprocess_shell(cmd, **subprocess_args)
+    return await subprocess.create_subprocess_exec(*cmd, **subprocess_args)
 
 
-async def run_check(cmd, **format_args):
+async def run_check(*cmd, **format_args):
     proc = await run_proc(cmd, format_args, {})
     rc = await proc.wait()
     if rc != 0:
         raise Exception("command execution failed (exit status != 0): %s" % cmd)
 
 
-async def run_capture_check(cmd, **format_args):
+async def run_capture_check(*cmd, **format_args):
     proc = await run_proc(cmd, format_args, {"stdout": subprocess.PIPE})
     rc = await proc.wait()
     if rc != 0:
@@ -181,13 +200,14 @@ async def run_capture_check(cmd, **format_args):
 
 
 async def route_start_ap(_request):
-    await shield(start_ap())
+    if not app["portal"]:
+        await shield(start_ap())
     return web.Response(text="OK")
 
 
 async def route_connect(request):
     try:
-        await shield(connect(request.query["essid"], request.query["password"]))
+        await shield(connect(request.query["essid"], request.query.get("password")))
         return web.Response(text="OK")
     except KeyError as exc:
         return web.Response(text="Missing query key essid or password!", status=400)
@@ -219,7 +239,7 @@ async def kill_daemons_on_cleanup(app):
 
 async def shutdown_interface(app):
     logger.debug("Shutting down interface...")
-    await run_check("ifconfig {if} down")
+    await run_check("ifconfig", "{if}", "down")
 
 
 class Container:
