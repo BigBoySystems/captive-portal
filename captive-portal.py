@@ -88,7 +88,7 @@ async def connect(essid, password):
             )
             await run_daemon("dhclient", "dhclient {if} -d")
             logger.info("Checking if connection is ready...")
-            for _ in range(5):
+            for _ in range(4):
                 if await check_ip_status():
                     logger.info("Connection succeeded.")
                     break
