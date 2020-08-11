@@ -23,8 +23,9 @@ async def start_ap():
     async with app["lock"]:
         logger.info("Starting access point...")
         await kill_daemons()
-        await run_check("ifconfig", "{if}", "down")
-        await run_check("ifconfig", "{if}", "up", "192.168.1.1")
+        await run_check("ip", "link", "set", "{if}", "down")
+        await run_check("ip", "link", "set", "{if}", "up")
+        await run_check("ip", "addr", "add", "192.168.1.1", "dev", "{if}")
         await run_daemon("hostapd", "/etc/hostapd/hostapd.conf")
         await run_daemon(
             "dnsmasq",
@@ -48,7 +49,7 @@ async def list_networks():
             logger.info("Getting networks...")
             if app["portal"]:
                 await kill_daemons()
-            await run_check("ifconfig", "{if}", "up")
+            await run_check("ip", "link", "set", "{if}", "up")
             output = await run_capture_check("iwlist", "{if}", "scan")
             networks = [
                 (ast.literal_eval(x[1]), x[0] == "on") for x in IWLIST_NETWORKS.findall(output)
@@ -83,9 +84,9 @@ async def connect(essid, password):
     try:
         async with app["lock"]:
             await kill_daemons()
-            await run_check("ifconfig", "{if}", "down")
+            await run_check("ip", "link", "set", "{if}", "down")
             await clear_ip()
-            await run_check("ifconfig", "{if}", "up")
+            await run_check("ip", "link", "set", "{if}", "up")
             if password is not None:
                 output = await run_capture_check(
                     "wpa_passphrase",
