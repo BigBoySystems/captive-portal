@@ -21,6 +21,8 @@ IWLIST_NETWORKS = re.compile(r"(Encryption key:on)?.+ESSID:(\"\w+\")")
 
 async def start_ap():
     async with app["lock"]:
+        if app["portal"]:
+            return
         logger.info("Starting access point...")
         await kill_daemons()
         await run_check("ifconfig {if} down")
@@ -246,7 +248,7 @@ app.on_cleanup.append(kill_daemons_on_cleanup)
 app.on_cleanup.append(shutdown_interface)
 app["daemons"] = OrderedDict()
 app["lock"] = Lock()
-app["portal"] = Container(True)
+app["portal"] = Container(False)
 app.add_routes([web.get("/start-ap", route_start_ap)])
 app.add_routes([web.get("/list-networks", route_list_networks)])
 app.add_routes([web.get("/connect", route_connect)])
