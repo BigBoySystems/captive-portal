@@ -25,6 +25,7 @@ async def start_ap():
         await kill_daemons()
         await run_check("ip", "link", "set", "{if}", "down")
         await run_check("ip", "link", "set", "{if}", "up")
+        await clear_ip()
         await run_check("ip", "addr", "add", "192.168.1.1", "dev", "{if}")
         await run_daemon("hostapd", "/etc/hostapd/hostapd.conf")
         await run_daemon(
@@ -185,14 +186,14 @@ async def run_check(*cmd, **format_args):
     proc = await run_proc(cmd, format_args, {})
     rc = await proc.wait()
     if rc != 0:
-        raise Exception("command execution failed (exit status != 0): %s" % cmd)
+        raise Exception("command execution failed (exit status != 0): %s" % (cmd,))
 
 
 async def run_capture_check(*cmd, **format_args):
     proc = await run_proc(cmd, format_args, {"stdout": subprocess.PIPE})
     rc = await proc.wait()
     if rc != 0:
-        raise Exception("command execution failed (exit status != 0): %s" % cmd)
+        raise Exception("command execution failed (exit status != 0): %s" % (cmd,))
     stdout = await proc.stdout.read()
     return stdout.decode("utf8")
 
