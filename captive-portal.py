@@ -17,6 +17,8 @@ else:
     from asyncio import create_task
 
 IWLIST_NETWORKS = re.compile(r"Encryption key:(on|off)\n\s*ESSID:(\"\w+\")")
+# NOTE: ip -br -j addr # -j is not supported on Debian Stretch! :(
+IP_ADDR = re.compile(r"^(\w+)\s+\S+\s+(.+) ", re.M)
 
 
 async def start_ap():
@@ -63,17 +65,15 @@ async def list_networks():
 
 
 async def get_ip_addresses():
-    output = await run_capture_check("ip", "-br", "-j", "addr")
-    data = json.loads(output)
-    interfaces = {x["ifname"]: x for x in data}
-    our_interface = interfaces[app["interface"]]
-    return our_interface["addr_info"]
+    output = await run_capture_check("ip", "-br", "addr")
+    interfaces = {ifname: addr_info.split(" ") for (ifname, addr_info) in IP_ADDR.findall(output)}
+    return interfaces[app["interface"]]
 
 
 async def clear_ip():
     addr_info = await get_ip_addresses()
-    for info in addr_info:
-        await run_check("ip", "addr", "del", "{local}/{prefixlen}", "dev", "{if}", **info)
+    for ip in addr_info:
+        await run_check("ip", "addr", "del", ip, "dev", "{if}")
 
 
 async def check_ip_status():
@@ -186,14 +186,14 @@ async def run_check(*cmd, **format_args):
     proc = await run_proc(cmd, format_args, {})
     rc = await proc.wait()
     if rc != 0:
-        raise Exception("command execution failed (exit status != 0): %s" % (cmd,))
+        raise Exception("command execution failed (exit status != 0): %s" % (cmd, ))
 
 
 async def run_capture_check(*cmd, **format_args):
     proc = await run_proc(cmd, format_args, {"stdout": subprocess.PIPE})
     rc = await proc.wait()
     if rc != 0:
-        raise Exception("command execution failed (exit status != 0): %s" % (cmd,))
+        raise Exception("command execution failed (exit status != 0): %s" % (cmd, ))
     stdout = await proc.stdout.read()
     return stdout.decode("utf8")
 
