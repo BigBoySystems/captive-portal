@@ -31,7 +31,7 @@ async def start_ap():
         await run_check("ip", "link", "set", "{if}", "down")
         await run_check("ip", "link", "set", "{if}", "up")
         await clear_ip()
-        await run_check("ip", "addr", "add", "192.168.1.1", "dev", "{if}")
+        await run_check("ip", "addr", "add", "192.168.1.1/24", "dev", "{if}")
         await run_daemon("hostapd", "/etc/hostapd/hostapd.conf")
         await run_daemon(
             "dnsmasq",
