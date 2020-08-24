@@ -18,7 +18,7 @@ else:
 
 IWLIST_NETWORKS = re.compile(r"Encryption key:(on|off)\n\s*ESSID:(\"\w+\")")
 # NOTE: ip -br -j addr # -j is not supported on Debian Stretch! :(
-IP_ADDR = re.compile(r"^(\w+)\s+\S+\s+(.+) ", re.M)
+IP_ADDR = re.compile(r"^(\w+)\s+\S+\s+(\S.*) ", re.M)
 
 
 async def start_ap():
@@ -67,7 +67,7 @@ async def list_networks():
 async def get_ip_addresses():
     output = await run_capture_check("ip", "-br", "addr")
     interfaces = {ifname: addr_info.split(" ") for (ifname, addr_info) in IP_ADDR.findall(output)}
-    return interfaces[app["interface"]]
+    return interfaces.get(app["interface"], [])
 
 
 async def clear_ip():
