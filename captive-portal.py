@@ -48,28 +48,21 @@ async def start_ap():
 
 
 async def list_networks():
-    try:
-        async with app["lock"]:
-            logger.info("Getting networks...")
-            if app["portal"]:
-                await kill_daemons()
-            await run_check("ip", "link", "set", "{if}", "up")
-            output = await run_capture_check("iwlist", "{if}", "scan")
-            networks = [
-                {x[0]: x[1]
-                for x in IWLIST_KEYS.findall(output)} for output in IWLIST_NETWORKS.split(output)
-                if "ESSID" in output
-            ]
-            networks = [
-                (
-                ast.literal_eval(section["ESSID"]),
-                section["Encryption key"] == "on",
-                ) for section in networks
-            ]
-            logger.info("Networks received successfully.")
-    finally:
-        if app["portal"]:
-            create_task(start_ap())
+    async with app["lock"]:
+        logger.info("Getting networks...")
+        output = await run_capture_check("iwlist", "{if}", "scan")
+        networks = [
+            {x[0]: x[1]
+            for x in IWLIST_KEYS.findall(output)} for output in IWLIST_NETWORKS.split(output)
+            if "ESSID" in output
+        ]
+        networks = [
+            (
+            ast.literal_eval(section["ESSID"]),
+            section["Encryption key"] == "on",
+            ) for section in networks if section["ESSID"] != "\"\""
+        ]
+        logger.info("Networks received successfully.")
     return networks
 
 
@@ -93,6 +86,7 @@ async def check_ip_status():
 async def connect(essid, password):
     try:
         async with app["lock"]:
+            logger.info("Connecting to %s (password: %s)...", essid, password is not None)
             await kill_daemons()
             await run_check("ip", "link", "set", "{if}", "down")
             await clear_ip()
