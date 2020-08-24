@@ -16,7 +16,8 @@ if sys.version_info.major == 3 and sys.version_info.minor < 7:
 else:
     from asyncio import create_task
 
-IWLIST_NETWORKS = re.compile(r"Encryption key:(on|off)\n\s*ESSID:(\"\w+\")")
+IWLIST_NETWORKS = re.compile(r"^\s+Cell", re.M)
+IWLIST_KEYS = re.compile(r"^\s*(\S[^:\n]*):(.+)", re.M)
 # NOTE: ip -br -j addr # -j is not supported on Debian Stretch! :(
 IP_ADDR = re.compile(r"^(\w+)\s+\S+\s+(\S.*) ", re.M)
 
@@ -55,7 +56,15 @@ async def list_networks():
             await run_check("ip", "link", "set", "{if}", "up")
             output = await run_capture_check("iwlist", "{if}", "scan")
             networks = [
-                (ast.literal_eval(x[1]), x[0] == "on") for x in IWLIST_NETWORKS.findall(output)
+                {x[0]: x[1]
+                for x in IWLIST_KEYS.findall(output)} for output in IWLIST_NETWORKS.split(output)
+                if "ESSID" in output
+            ]
+            networks = [
+                (
+                ast.literal_eval(section["ESSID"]),
+                section["Encryption key"] == "on",
+                ) for section in networks
             ]
             logger.info("Networks received successfully.")
     finally:
