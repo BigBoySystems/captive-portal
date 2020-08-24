@@ -20,6 +20,8 @@ IWLIST_NETWORKS = re.compile(r"^\s+Cell", re.M)
 IWLIST_KEYS = re.compile(r"^\s*(\S[^:\n]*):(.+)", re.M)
 # NOTE: ip -br -j addr # -j is not supported on Debian Stretch! :(
 IP_ADDR = re.compile(r"^(\w+)\s+\S+\s+(\S.*) ", re.M)
+GRACE_PERIOD = 30
+KERNEL_MODULES = ["8192cu", "cfg80211"]
 
 
 async def start_ap():
@@ -83,6 +85,11 @@ async def check_ip_status():
     return len(addr_info) > 0
 
 
+async def reload_wifi_modules():
+    await run_check("rmmod", *KERNEL_MODULES)
+    await run_check("modprobe", *KERNEL_MODULES)
+
+
 async def connect(essid, password):
     try:
         async with app["lock"]:
@@ -90,6 +97,10 @@ async def connect(essid, password):
             await kill_daemons()
             await run_check("ip", "link", "set", "{if}", "down")
             await clear_ip()
+            # NOTE: on this old version of Linux it seems that the network gets into a broken state
+            #       after stopping wpa_supplicant. On more recent versions of Linux I didn't get
+            #       this issue
+            await reload_wifi_modules()
             await run_check("ip", "link", "set", "{if}", "up")
             if password is not None:
                 output = await run_capture_check(
@@ -113,16 +124,17 @@ async def connect(essid, password):
                 await run_check("iwconfig", "{if}", "ap", "any")
             await run_daemon("dhclient", "{if}", "-d")
             logger.info("Checking if connection is ready...")
-            for _ in range(4):
-                if await check_ip_status():
+            for i in range(GRACE_PERIOD):
+                if i % 2 == 0 and await check_ip_status():
                     logger.info("Connection succeeded.")
                     break
-                await sleep(2)
+                await sleep(1)
             else:
                 logger.info(
                     "The connection to the WiFi did not succeed in the allowed amount of time"
                 )
                 raise Exception("Could not connect to network.")
+            await run_daemon("nginx", "-g", "daemon off; error_log stderr;")
             app["portal"].set(False)
     except Exception:
         await start_ap()
@@ -212,7 +224,7 @@ async def route_start_ap(_request):
 
 async def route_connect(request):
     try:
-        await shield(connect(request.query["essid"], request.query.get("password")))
+        create_task(connect(request.query["essid"], request.query.get("password")))
         return web.Response(text="OK")
     except KeyError as exc:
         return web.Response(text="Missing query key essid or password!", status=400)
