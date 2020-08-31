@@ -28,6 +28,7 @@ HOSTAPD_CONF = "/run/hostapd.conf"
 async def start_ap():
     async with app["lock"]:
         logger.info("Starting access point...")
+        app["essid"].set(None)
         with open(app["hostapd"], "wt") as fh:
             fh.write(
                 """\
@@ -147,6 +148,7 @@ async def connect(essid, password):
                 raise Exception("Could not connect to network.")
             await run_daemon("nginx", "-g", "daemon off; error_log stderr;")
             app["portal"].set(False)
+            app["essid"].set(essid)
     except Exception:
         await start_ap()
         raise
@@ -254,7 +256,10 @@ async def route_list_networks(_request):
 
 
 async def route_ap(_request):
-    return web.json_response(app["portal"].get())
+    return web.json_response({
+        "portal": app["portal"].get(),
+        "essid": app["essid"].get(),
+    })
 
 
 async def start_ap_on_startup(app):
@@ -299,6 +304,7 @@ app["daemons"] = OrderedDict()
 app["lock"] = Lock()
 app["portal"] = Container(False)
 app["hostapd"] = HOSTAPD_CONF
+app["essid"] = Container(None)
 app.add_routes([web.get("/start-ap", route_start_ap)])
 app.add_routes([web.get("/list-networks", route_list_networks)])
 app.add_routes([web.get("/connect", route_connect)])
