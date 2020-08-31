@@ -22,17 +22,28 @@ IWLIST_KEYS = re.compile(r"^\s*(\S[^:\n]*):(.+)", re.M)
 IP_ADDR = re.compile(r"^(\w+)\s+\S+\s+(\S.*) ", re.M)
 GRACE_PERIOD = 30
 KERNEL_MODULES = ["8192cu", "cfg80211"]
+HOSTAPD_CONF = "/run/hostapd.conf"
 
 
 async def start_ap():
     async with app["lock"]:
         logger.info("Starting access point...")
+        with open(app["hostapd"], "wt") as fh:
+            fh.write(
+                """\
+interface=%s
+ctrl_interface=/var/run/hostapd
+ssid=Third-I
+channel=7
+max_num_sta=1
+""" % app["interface"]
+            )
         await kill_daemons()
         await run_check("ip", "link", "set", "{if}", "down")
         await run_check("ip", "link", "set", "{if}", "up")
         await clear_ip()
         await run_check("ip", "addr", "add", "192.168.1.1/24", "dev", "{if}")
-        await run_daemon("hostapd", "/etc/hostapd/hostapd.conf")
+        await run_daemon("hostapd", "{hostapd}")
         await run_daemon(
             "dnsmasq",
             "-i",
@@ -191,6 +202,7 @@ async def kill_daemons():
 async def run_proc(cmd, format_args, subprocess_args):
     format_args.update({
         "if": app["interface"],
+        "hostapd": app["hostapd"],
     })
     cmd = [x.format_map(format_args) for x in cmd]
     logger.debug("Running command: %s", cmd)
@@ -286,6 +298,7 @@ app.on_cleanup.append(shutdown_interface)
 app["daemons"] = OrderedDict()
 app["lock"] = Lock()
 app["portal"] = Container(False)
+app["hostapd"] = HOSTAPD_CONF
 app.add_routes([web.get("/start-ap", route_start_ap)])
 app.add_routes([web.get("/list-networks", route_list_networks)])
 app.add_routes([web.get("/connect", route_connect)])
