@@ -19,7 +19,7 @@ else:
 IWLIST_NETWORKS = re.compile(r"^\s+Cell", re.M)
 IWLIST_KEYS = re.compile(r"^\s*(\S[^:\n]*):(.+)", re.M)
 # NOTE: ip -br -j addr # -j is not supported on Debian Stretch! :(
-IP_ADDR = re.compile(r"^(\w+)\s+\S+\s+(\S.*) ", re.M)
+IP_ADDR = re.compile(r"^(\w+)[ \t]+\S+[ \t]+(\S.*) ", re.M)
 GRACE_PERIOD = 30
 KERNEL_MODULES = ["8192cu", "cfg80211"]
 HOSTAPD_CONF = "/run/hostapd.conf"
