@@ -154,6 +154,14 @@ async def connect(essid, password):
         raise
 
 
+async def get_info():
+    async with app["lock"]:
+        return {
+            "portal": app["portal"].get(),
+            "essid": app["essid"].get(),
+        }
+
+
 # daemon management
 
 
@@ -256,10 +264,8 @@ async def route_list_networks(_request):
 
 
 async def route_ap(_request):
-    return web.json_response({
-        "portal": app["portal"].get(),
-        "essid": app["essid"].get(),
-    })
+    res = await get_info()
+    return web.json_response(res)
 
 
 async def start_ap_on_startup(app):
