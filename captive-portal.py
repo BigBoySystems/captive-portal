@@ -23,6 +23,7 @@ IP_ADDR = re.compile(r"^(\w+)[ \t]+\S+[ \t]+(\S.*) ", re.M)
 GRACE_PERIOD = 30
 KERNEL_MODULES = ["8192cu", "cfg80211"]
 HOSTAPD_CONF = "/run/hostapd.conf"
+MAX_LIST_NETWORK_FAILURES = 3
 
 
 async def start_ap():
@@ -98,6 +99,7 @@ async def check_ip_status():
 
 
 async def reload_wifi_modules():
+    logger.info("Reloading kernel WiFi modules...")
     await run_check("rmmod", *KERNEL_MODULES)
     await run_check("modprobe", *KERNEL_MODULES)
 
@@ -253,7 +255,14 @@ async def route_connect(request):
 
 
 async def route_list_networks(_request):
+    if app["list_network_failures"].get() == 3:
+        await reload_wifi_modules()
+        app["list_network_failures"].set(0)
+
     networks = await shield(list_networks())
+    if len(networks) == 0:
+        app["list_network_failures"].set(app["list_network_failures"].get() + 1)
+
     data = [
         {
         "essid": essid,
@@ -311,6 +320,7 @@ app["lock"] = Lock()
 app["portal"] = Container(False)
 app["hostapd"] = HOSTAPD_CONF
 app["essid"] = Container(None)
+app["list_network_failures"] = Container(0)
 app.add_routes([web.get("/start-ap", route_start_ap)])
 app.add_routes([web.get("/list-networks", route_list_networks)])
 app.add_routes([web.get("/connect", route_connect)])
