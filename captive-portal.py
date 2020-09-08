@@ -164,6 +164,13 @@ async def get_info():
         }
 
 
+async def stop_wifi():
+    async with app["lock"]:
+        logger.info("Shutting down interface...")
+        await kill_daemons()
+        await run_check("ip", "link", "set", "{if}", "down")
+
+
 # daemon management
 
 
@@ -277,18 +284,18 @@ async def route_ap(_request):
     return web.json_response(res)
 
 
+async def route_wifi_off(_request):
+    await stop_wifi()
+    return web.Response(text="OK")
+
+
+async def route_wifi_on(_request):
+    await shield(start_ap())
+    return web.Response(text="OK")
+
+
 async def start_ap_on_startup(app):
     create_task(start_ap())
-
-
-async def kill_daemons_on_cleanup(app):
-    async with app["lock"]:
-        await kill_daemons()
-
-
-async def shutdown_interface(app):
-    logger.debug("Shutting down interface...")
-    await run_check("ifconfig", "{if}", "down")
 
 
 class Container:
@@ -313,18 +320,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("captive-portal")
 app = web.Application()
 app.on_startup.append(start_ap_on_startup)
-app.on_cleanup.append(kill_daemons_on_cleanup)
-app.on_cleanup.append(shutdown_interface)
+app.on_cleanup.append(lambda _app: stop_wifi())
 app["daemons"] = OrderedDict()
 app["lock"] = Lock()
 app["portal"] = Container(False)
 app["hostapd"] = HOSTAPD_CONF
 app["essid"] = Container(None)
 app["list_network_failures"] = Container(0)
-app.add_routes([web.get("/start-ap", route_start_ap)])
-app.add_routes([web.get("/list-networks", route_list_networks)])
-app.add_routes([web.get("/connect", route_connect)])
-app.add_routes([web.get("/portal", route_ap)])
+app.add_routes(
+    [
+    web.get("/start-ap", route_start_ap),
+    web.get("/list-networks", route_list_networks),
+    web.get("/connect", route_connect),
+    web.get("/portal", route_ap),
+    web.get("/wifi-off", route_wifi_off),
+    web.get("/wifi-on", route_wifi_on),
+    ]
+)
 
 parser = argparse.ArgumentParser(description="A captive portal service for the thingy")
 parser.add_argument(
