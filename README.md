@@ -32,3 +32,9 @@ Use this command instead:
 ```
 pipenv run prod --host localhost --port 8000 --debug wlan0
 ```
+
+Or if you need a Unix socket (for the backend):
+
+```
+pipenv run prod --unix /run/captive-portal.sock --debug wlan0
+```
