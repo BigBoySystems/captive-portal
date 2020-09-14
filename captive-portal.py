@@ -42,6 +42,9 @@ max_num_sta=1
             )
         await kill_daemons()
         await run_check("ip", "link", "set", "{if}", "down")
+        # NOTE: on this old version of Linux it seems that the network gets into a broken state
+        #       for some reasons
+        await reload_wifi_modules()
         await run_check("ip", "link", "set", "{if}", "up")
         await clear_ip()
         await run_check("ip", "addr", "add", "192.168.1.1/24", "dev", "{if}")
@@ -263,7 +266,8 @@ async def route_connect(request):
 
 async def route_list_networks(_request):
     if app["list_network_failures"].get() == 3:
-        await reload_wifi_modules()
+        if app["portal"]:
+            await shield(start_ap())
         app["list_network_failures"].set(0)
 
     networks = await shield(list_networks())
