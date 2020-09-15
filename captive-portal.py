@@ -226,7 +226,7 @@ async def run_proc(cmd, format_args, subprocess_args):
         "if": app["interface"],
         "hostapd": app["hostapd"],
     })
-    cmd = [x.format_map(format_args) for x in cmd]
+    cmd = [str(x).format_map(format_args) for x in cmd]
     logger.debug("Running command: %s", cmd)
     return await subprocess.create_subprocess_exec(*cmd, **subprocess_args)
 
@@ -265,14 +265,7 @@ async def route_connect(request):
 
 
 async def route_list_networks(_request):
-    if app["list_network_failures"].get() == 3:
-        if app["portal"]:
-            await shield(start_ap())
-        app["list_network_failures"].set(0)
-
     networks = await shield(list_networks())
-    if len(networks) == 0:
-        app["list_network_failures"].set(app["list_network_failures"].get() + 1)
 
     data = [
         {
@@ -330,7 +323,6 @@ app["lock"] = Lock()
 app["portal"] = Container(False)
 app["hostapd"] = HOSTAPD_CONF
 app["essid"] = Container(None)
-app["list_network_failures"] = Container(0)
 app.add_routes(
     [
     web.get("/start-ap", route_start_ap),
