@@ -101,12 +101,14 @@ own_ip_addr=127.0.0.1
             "-R",
             "-F",
             "192.168.1.1,192.168.1.32,255.255.255.0",
-            "-A",
+            # NOTE: captive portal mode is disabled for now because it causes more problems than it
+            #       solves
+            #"-A",
             # NOTE: prevent captive portal window to open up on OSX because JS is disabled on that
             #       window making the third-i frontend completely unusable
-            "/captive.apple.com/0.0.0.0",
-            "-A",
-            "/#/192.168.1.1",
+            #"/captive.apple.com/0.0.0.0",
+            #"-A",
+            #"/#/192.168.1.1",
         )
         await run_daemon("nginx", "-g", "daemon off; error_log stderr;")
         logger.info("Access point started successfully.")
