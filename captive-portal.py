@@ -21,7 +21,7 @@ IWLIST_KEYS = re.compile(r"^\s*(\S[^:\n]*):(.+)", re.M)
 # NOTE: ip -br -j addr # -j is not supported on Debian Stretch! :(
 IP_ADDR = re.compile(r"^(\w+)[ \t]+\S+[ \t]+(\S.*) ", re.M)
 GRACE_PERIOD = 30
-KERNEL_MODULES = ["8192cu", "cfg80211"]
+KERNEL_MODULES = ["rtl8192cu", "cfg80211"]
 HOSTAPD_CONF = "/run/hostapd.conf"
 MAX_LIST_NETWORK_FAILURES = 3
 
@@ -153,7 +153,7 @@ async def check_ip_status():
 
 async def reload_wifi_modules():
     logger.info("Reloading kernel WiFi modules...")
-    await run_check("rmmod", *KERNEL_MODULES)
+    #await run_check("rmmod", *KERNEL_MODULES)
     await run_check("modprobe", *KERNEL_MODULES)
 
 
