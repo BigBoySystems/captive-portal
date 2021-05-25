@@ -88,7 +88,6 @@ own_ip_addr=127.0.0.1
         await run_check("ip", "link", "set", "{if}", "down")
         # NOTE: on this old version of Linux it seems that the network gets into a broken state
         #       for some reasons
-        await reload_wifi_modules()
         await run_check("ip", "link", "set", "{if}", "up")
         await clear_ip()
         await run_check("ip", "addr", "add", "192.168.1.1/24", "dev", "{if}")
@@ -151,12 +150,6 @@ async def check_ip_status():
     return len(addr_info) > 0
 
 
-async def reload_wifi_modules():
-    logger.info("Reloading kernel WiFi modules...")
-    #await run_check("rmmod", *KERNEL_MODULES)
-    await run_check("modprobe", *KERNEL_MODULES)
-
-
 async def connect(essid, password):
     try:
         async with app["lock"]:
@@ -167,7 +160,6 @@ async def connect(essid, password):
             # NOTE: on this old version of Linux it seems that the network gets into a broken state
             #       after stopping wpa_supplicant. On more recent versions of Linux I didn't get
             #       this issue
-            await reload_wifi_modules()
             await run_check("ip", "link", "set", "{if}", "up")
             if password is not None:
                 output = await run_capture_check(
